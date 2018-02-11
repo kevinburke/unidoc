@@ -110,6 +110,7 @@ func (this *ContentStreamParser) ExtractText() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	xPos, yPos := float64(-1), float64(-1)
 	inText := false
 	txt := ""
 	for _, op := range *operations {
@@ -118,6 +119,48 @@ func (this *ContentStreamParser) ExtractText() (string, error) {
 		} else if op.Operand == "ET" {
 			inText = false
 		}
+		if op.Operand == "Tm" {
+			// Text matrix. See here for an explanation of how this relates to
+			// drawn software:
+			// https://stackoverflow.com/a/17202701/329700
+			if len(op.Params) != 6 {
+				continue
+			}
+			// 0-3 are scale/shear for x and y. Typical values are 1 0 0 1.
+			// 4 is X offset from the left side.
+			// 5 is Y offset from the bottom (origin in doc bottom left corner).
+			xfloat, ok := op.Params[4].(*PdfObjectFloat)
+			if !ok {
+				xint, ok := op.Params[4].(*PdfObjectInteger)
+				if !ok {
+					continue
+				}
+				xfloat = MakeFloat(float64(*xint))
+			}
+			yfloat, ok := op.Params[5].(*PdfObjectFloat)
+			if !ok {
+				yint, ok := op.Params[5].(*PdfObjectInteger)
+				if !ok {
+					continue
+				}
+				yfloat = MakeFloat(float64(*yint))
+			}
+			if yPos == -1 {
+				yPos = float64(*yfloat)
+			} else if yPos > float64(*yfloat) {
+				txt += "\n"
+				xPos = float64(*xfloat)
+				yPos = float64(*yfloat)
+				continue
+			}
+			if xPos == -1 {
+				xPos = float64(*xfloat)
+			} else if xPos < float64(*xfloat) {
+				txt += "\t"
+				xPos = float64(*xfloat)
+			}
+		}
+
 		if op.Operand == "Td" || op.Operand == "TD" || op.Operand == "T*" {
 			// Move to next line...
 			txt += "\n"
